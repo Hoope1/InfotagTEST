@@ -1,3 +1,60 @@
+* **Läuft portabel als Windows-EXE (USB, ohne Installation, offline).**
+
+* **Liest deine DOCX-Vorlagen** (Rechentest A/B/C) **und die zugehörigen DOCX-Lösungen** ein.
+
+* **Segmentiert den Test** in Aufgabenblöcke:
+
+  * **Aufgabe 1 & 2** werden als **parametrisierte Platzhalter** erkannt.
+  * **Aufgabe 3–7** werden als **Blöcke mit Text + Bildern + Optionen a–e** erkannt (je Block **genau eine** richtige Option).
+
+* **Ermittelt die korrekten Lösungen** für 3–7 aus der **Lösungs-DOCX** (z. B. „Aufgabe 4: c“).
+
+* **Erzeugt neue Inhalte für Aufgabe 1 & 2** mit **gleichem Schwierigkeitsgrad**:
+
+  * Zahlengrößen/Operatoren wie in den Beispielen.
+  * **Divisionen nur mit ganzzahligem Ergebnis.**
+  * **Umwandlungsaufgaben** mit denselben Einheitentypen/Komplexität.
+  * Regeln sind **konfigurierbar** (YAML), initial **aus den Beispielen gelernt**.
+
+* **Mischt ab Aufgabe 3**:
+
+  * **Zufällige Reihenfolge der Aufgaben 3–7**.
+  * **Zufällige Reihenfolge der Optionen a–e** innerhalb jeder Aufgabe.
+  * **Richtige Antwort wandert mit**; nach dem Mischen werden die sichtbaren **Nummern wieder 3–7** gesetzt.
+
+* **Bilderbehandlung 1:1 zum Original**:
+
+  * Jedes Bild ist **genau einer Aufgabe zugeordnet** und **wandert mit**.
+  * **Original-Größen (Extents) aus der Vorlage** werden übernommen.
+  * **Kein Upscaling**; falls nötig, **proportional verkleinern** (Seitenverhältnis bleibt).
+
+* **RNG/Varianten-ID**:
+
+  * Jede Variante erhält eine **Varianten-ID** (auch auf dem Deckblatt).
+  * Die ID dient als **Seed** → **reproduzierbare** Permutationen & Zahlen.
+
+* **Rendert die Ergebnisse**:
+
+  * **Neue Test-DOCX** mit aktualisierten A1/A2, gemischten 3–7, korrekten Bildern, Deckblatt unverändert.
+  * **Neue Lösungs-DOCX** (A1/A2-Ergebnisse + richtige Buchstaben 3–7).
+  * **Optional PDF-Export**, wenn MS Word vorhanden; sonst nur DOCX.
+
+* **Fehlertoleranz & Checks**:
+
+  * Prüft auf fehlende Bilder/Regeln.
+  * Verhindert „unschöne“ Fälle (z. B. nicht-ganzzahlige Division).
+  * Verständliche Fehlermeldungen.
+
+**Kurzablauf pro Variante**
+
+1. Vorlagen + Regeln laden → Seed aus Varianten-ID setzen
+2. DOCX parsen (A1/A2, Blöcke 3–7, Bilder, richtige Option)
+3. A1/A2 neu generieren (gleiches Level)
+4. 3–7 und deren Optionen mischen (mit Lösungsmapping)
+5. Bilder an den Blöcken belassen, Größen beibehalten/ggf. verkleinern
+6. Test-DOCX + Lösungs-DOCX schreiben (Deckblatt/Nummerierung/Lösungstabelle konsistent)
+7. Optional DOCX→PDF (falls Word vorhanden)
+
 # SPEC-1-Testgenerator (Single-User)
 
 ## Background
