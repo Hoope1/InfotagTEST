@@ -259,3 +259,127 @@ images:
     target_dpi: 300
 ```
 
+
+## Implementation
+
+### Projektstruktur
+```
+rechentest-generator/
+  app/
+    gui.py                 # Tkinter GUI (Vorlage, Anzahl, Seed, Zielordner)
+    main.py                # CLI/Startpunkt, Orchestrierung
+    parser_docx.py         # DOCX lesen, Aufgabenblöcke 3–7 + Optionen + Bilder erkennen
+    randomizer.py          # Deterministisches Mischen (Aufgaben/Optionen) per Seed
+    rule_engine.py         # Generator für Aufgabe 1 & 2 (Zahlbereiche, Einheiten, Divisionen)
+    renderer_docx.py       # Neues DOCX schreiben (Deckblatt, Platzhalter, Blöcke, Bilder)
+    solution_builder.py    # Lösungs-DOCX erzeugen (A1/A2-Ergebnisse, Buchstaben 3–7)
+    pdf_export.py          # Optional: DOCX→PDF über Word/COM oder docx2pdf
+    config.py              # YAML laden/validieren, Defaults
+    validators.py          # YAML-Schema-Prüfungen, Dry-Run-Checks
+    learn_from_examples.py # Einmal: Regeln aus A/B/C-Vorlagen extrahieren
+  templates/
+    A/ {test.docx, solution.docx, config.yaml}
+    B/ {test.docx, solution.docx, config.yaml}
+    C/ {test.docx, solution.docx, config.yaml}
+  dist/                    # Ausgabevarianten
+  buildspec/
+    pyinstaller.spec       # Portable Build-Konfiguration (onefile/onedir)
+```
+
+### Dateien & Module (Aufgaben)
+- **gui.py**: Minimalistische Oberfläche (Dateiauswahl Vorlage A/B/C, Anzahl Varianten, Seed optional, Zielordner). Fortschrittsanzeige, Fehlermeldungen.
+- **main.py**: Verknüpft GUI/CLI, setzt Varianten-ID (\<Vorlagenpräfix\>-\<YYYYMMDD\>-\<laufende Nr.\>) und RNG-Seed.
+- **parser_docx.py**:
+  - Liest Test- und Lösungs-DOCX.
+  - Findet **Aufgabenblöcke 3–7** (alle Absätze + Bilder bis zur nächsten Überschrift).
+  - Extrahiert **Optionen a–e** je Block und ermittelt **korrekte Option** aus der Lösung.
+  - Liest **Bild-Extents** (Breite/Höhe in EMUs) + Media-Datei.
+- **randomizer.py**: Permutiert Aufgaben 3–7 und die Optionen a–e deterministisch (Seed). Aktualisiert Mapping „Aufgabe → richtiger Buchstabe“.
+- **rule_engine.py**: Generiert Inhalte für **Aufgabe 1 & 2** nach YAML-Regeln (Zahlenbereiche, Operatoren, nur ganzzahlige Divisionen; Umwandlungen: Einheiten & Wertebereiche).
+- **renderer_docx.py**: Baut neues **Test-DOCX** (Platzhalter A1/A2 füllen, Blöcke 3–7 in neuer Reihenfolge einsetzen, **Bilder mit Original-Extents**, Nummern wieder 3–7, Deckblatt/Varianten-ID). Baut **Lösungs-DOCX** über **solution_builder.py**.
+- **solution_builder.py**: Erzeugt Lösungsseiten (A1/A2-Ergebnisse; Buchstaben 3–7 in Tabelle/Listenform).
+- **pdf_export.py**: Optionaler Export nach PDF, wenn Word vorhanden. Fallback: nur DOCX.
+- **config.py / validators.py**: YAML laden, Schema prüfen, Defaults mergen; Dry-Run (nur A1/A2 + Mapping 3–7 ohne Render).
+- **learn_from_examples.py**: Extrahiert initiale Regeln aus A/B/C (Operatoren, Zahlen-/Einheitenbereiche) und schreibt Vorschlags-YAML.
+
+### Regex-Definitionen (Parsing)
+> Alle Muster werden auf **Absatztext** angewendet. Backslashes sind hier doppelt geschrieben (\) für Klarheit.
+
+- **Aufgaben-Überschrift**: `^Aufgabe\s+([3-7])\b`
+  - Gruppe 1 = Aufgabennummer; der **Block** reicht bis zur nächsten Überschrift oder Dokumentende.
+- **Optionenzeile (a–e)**: `^[a-e][)\.:]\s+`
+  - Erkennt a) / b: / c. + Leerzeichen. Mehrzeilige Optionen werden bis zur nächsten Option oder Leerzeile zusammengeführt.
+- **Lösungszeile (in Lösung-DOCX)**: `^Aufgabe\s*([3-7])\s*[:\-]?\s*([a-e])\b`
+  - Gruppe 1 = Aufgabennummer; Gruppe 2 = richtiger Buchstabe.
+- **A1/A2-Platzhalter** (mit docxtpl): `{{A1_.*?}}`, `{{A2_.*?}}` (keine Regex-Verarbeitung nötig, hier nur Konvention der Platzhalternamen).
+
+### YAML-Schema (kommentiert)
+> Konfig-Datei pro Vorlage (A/B/C) unter `templates/<X>/config.yaml`.
+
+```yaml
+meta:
+  template: "Rechentest X.docx"        # Pfad zur Testvorlage
+  solution_template: "Rechentest X Lösung.docx"  # Pfad zur Lösungsvorlage
+  variant_prefix: "X"                   # z. B. A | B | C
+  deckblatt:
+    show_variant_id: true               # ID sichtbar auf Deckblatt
+    variant_id_format: "{prefix}-{date:%Y%m%d}-{n:03d}"  # Formatstring
+  rng:
+    seed_source: "variant_id"          # variant_id | fixed
+    fixed_seed: null                    # optional fester Seed für Tests
+
+aufgabe1:                                # Rechenaufgaben (Zeilenliste)
+  rows: 10                               # Anzahl Zeilen
+  patterns:                              # Liste erlaubter Muster
+    - op: add                            # add|sub|mul|div_int
+      a: {min: 10, max: 99, digits: 2}
+      b: {min: 10, max: 99, digits: 2}
+    - op: div_int                        # Division mit ganzzahligem Ergebnis
+      a: {min: 20, max: 90}
+      b: {divisors_of_a: true, min: 2, max: 10}
+  formatting:
+    spaces_around_operator: true
+    result_field_placeholder: "______"   # optisch wie Vorlage
+
+aufgabe2:                                # Umwandlungsaufgaben
+  conversions:                           # Liste möglicher Paare
+    - from: cm
+      to: mm
+      value: {min: 10, max: 99, digits: 2}
+    - from: m
+      to: cm
+      value: {min: 1, max: 20, digits: 2}
+  rounding: integer                      # integer|fixed(n)|none
+  allowed_dimensions: [laenge]           # laenge|masse|zeit ... (optional)
+
+aufgabe3_7:
+  heading_patterns: ["Aufgabe 3", "Aufgabe 4", "Aufgabe 5", "Aufgabe 6", "Aufgabe 7"]
+  option_pattern: "^[a-e][)\.:]\s+"
+  shuffle_tasks: true
+  shuffle_options: true
+  renumber_visible_from: 3               # sichtbare Nummerierung zurücksetzen
+
+images:                                  # Bildhandhabung
+  default:
+    mode: fit                            # fit|fill
+    max_width_cm: 17.38                  # per Vorlage ermittelt oder kleiner
+    max_height_cm: 10.32
+    allow_upscale: false
+    target_dpi: 200
+  overrides:                             # optional pro Aufgabe
+    5: {max_width_cm: 10.0, target_dpi: 300}
+
+export:
+  pdf: auto                              # auto|never  (auto nur, wenn Word vorhanden)
+  output_naming: "{prefix}-{date:%Y%m%d}-{n:03d}-{kind}"  # kind=test|loesung
+```
+
+### Ablauf (funktional, API der Module)
+- **parse(test_docx, solution_docx)** → `ParsedDoc(test_blocks, solution_map, images)`
+- **generate_a1a2(config, rng)** → `A1A2Payload` (Listen der Aufgaben + Lösungen)
+- **shuffle_blocks(blocks, rng)** → neue Reihenfolge, **shuffle_options** pro Block
+- **render_test(parsed, a1a2, order, option_orders, config)** → `test.docx`
+- **build_solution(parsed, a1a2, option_orders)** → `loesung.docx`
+- **export_pdf(docx_path, mode=auto)** → `pdf_path | None`
+
+> Ergebnis pro Lauf: **Test-DOCX** + **Lösungs-DOCX**, optional **PDF**. Varianten-ID/Seed sichern Reproduzierbarkeit.
